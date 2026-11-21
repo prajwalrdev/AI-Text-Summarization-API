@@ -1,0 +1,27 @@
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Python bytecode and cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables & secrets (Never commit secrets to version control)
+.env
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editor and IDE configurations
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Operating System files
+.DS_Store
+Thumbs.db
