@@ -4,6 +4,7 @@ Main FastAPI Application Entry Point.
 
 from fastapi import FastAPI, status
 from app.schemas import HealthResponse, SummarizeRequest, SummarizeResponse
+from app.services import summarize_text
 
 app = FastAPI(
     title="AI Text Summarizer API",
@@ -34,19 +35,16 @@ def health_check() -> HealthResponse:
     status_code=status.HTTP_200_OK,
     tags=["Summarization"],
     summary="Generate text summary",
-    description="Accepts text in JSON format, validates input via Pydantic, and returns a summary.",
+    description="Accepts text in JSON format, validates input via Pydantic, and returns an AI-generated summary from Gemini.",
 )
 def summarize(request: SummarizeRequest) -> SummarizeResponse:
     """
-    Summarize input text endpoint.
+    Summarize input text using Google's hosted Gemini API.
     
-    Validates input using SummarizeRequest schema.
-    In Module 4, this calls the Google Gemini API.
-    In Module 5, it saves the input and summary to PostgreSQL.
+    1. Validates input schema via Pydantic.
+    2. Sends text to Gemini via the official google-genai SDK.
+    3. Returns the structured AI summary.
+    (PostgreSQL persistence is integrated in Module 5).
     """
-    placeholder_summary = (
-        f"Summary: {request.text[:100]}..."
-        if len(request.text) > 100
-        else f"Summary: {request.text}"
-    )
-    return SummarizeResponse(summary=placeholder_summary)
+    summary = summarize_text(request.text)
+    return SummarizeResponse(summary=summary)
