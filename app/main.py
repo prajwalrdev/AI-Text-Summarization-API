@@ -2,9 +2,36 @@
 Main FastAPI Application Entry Point.
 """
 
-from fastapi import FastAPI, status
-from app.schemas import HealthResponse, SummarizeRequest, SummarizeResponse
+from contextlib import asynccontextmanager
+from typing import List
+from fastapi import Depends, FastAPI, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+
+from app.database import Base, engine, get_db
+from app.models import Summary
+from app.schemas import (
+    HealthResponse,
+    SummarizeRequest,
+    SummarizeResponse,
+    SummaryRecord,
+)
 from app.services import summarize_text
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application lifespan manager.
+    Initializes database tables on application startup.
+    """
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as exc:
+        print(f"Notice: Database table initialization deferred or failed: {exc}")
+    yield
+
 
 app = FastAPI(
     title="AI Text Summarizer API",
@@ -12,6 +39,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 
@@ -34,17 +62,64 @@ def health_check() -> HealthResponse:
     response_model=SummarizeResponse,
     status_code=status.HTTP_200_OK,
     tags=["Summarization"],
-    summary="Generate text summary",
-    description="Accepts text in JSON format, validates input via Pydantic, and returns an AI-generated summary from Gemini.",
+    summary="Generate and save text summary",
+    description="Accepts text in JSON format, generates summary with Gemini, and saves to the database.",
 )
-def summarize(request: SummarizeRequest) -> SummarizeResponse:
+def summarize(
+    request: SummarizeRequest,
+    db: Session = Depends(get_db),
+) -> SummarizeResponse:
     """
-    Summarize input text using Google's hosted Gemini API.
+    Summarize input text endpoint.
     
     1. Validates input schema via Pydantic.
-    2. Sends text to Gemini via the official google-genai SDK.
-    3. Returns the structured AI summary.
-    (PostgreSQL persistence is integrated in Module 5).
+    2. Sends text to Google's hosted Gemini API.
+    3. Persists original text and generated summary in PostgreSQL database.
+    4. Returns the AI-generated summary.
     """
+    # 1. Call Gemini AI service
     summary = summarize_text(request.text)
+
+    # 2. Persist record into the PostgreSQL database
+    try:
+        record = Summary(
+            original_text=request.text,
+            generated_summary=summary,
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error occurred while persisting summary: {str(exc)}",
+        ) from exc
+
     return SummarizeResponse(summary=summary)
+
+
+@app.get(
+    "/summaries",
+    response_model=List[SummaryRecord],
+    status_code=status.HTTP_200_OK,
+    tags=["Summarization"],
+    summary="List stored summaries",
+    description="Retrieve stored summarization records from the database for verification.",
+)
+def get_summaries(
+    limit: int = 20,
+    db: Session = Depends(get_db),
+) -> List[SummaryRecord]:
+    """
+    Retrieve stored summary records ordered by creation date descending.
+    """
+    try:
+        query = select(Summary).order_by(Summary.created_at.desc()).limit(limit)
+        results = db.scalars(query).all()
+        return list(results)
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database query error: {str(exc)}",
+        ) from exc

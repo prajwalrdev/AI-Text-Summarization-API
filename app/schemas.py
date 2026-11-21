@@ -2,7 +2,8 @@
 Pydantic schemas for request validation and response serialization.
 """
 
-from pydantic import BaseModel, Field, field_validator
+from datetime import datetime
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class SummarizeRequest(BaseModel):
@@ -47,6 +48,19 @@ class SummarizeResponse(BaseModel):
             "Artificial intelligence is revolutionizing industries by streamlining workflows and extracting valuable insights."
         ],
     )
+
+
+class SummaryRecord(BaseModel):
+    """
+    Schema representing a stored summary record in the database.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int = Field(..., description="Unique database identifier.")
+    original_text: str = Field(..., description="The original submitted text.")
+    generated_summary: str = Field(..., description="The AI-generated summary.")
+    created_at: datetime = Field(..., description="Timestamp when the summary was saved.")
 
 
 class HealthResponse(BaseModel):
