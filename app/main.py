@@ -112,10 +112,10 @@ def get_summaries(
     db: Session = Depends(get_db),
 ) -> List[SummaryRecord]:
     """
-    Retrieve stored summary records ordered by creation date descending.
+    Retrieve stored summary records ordered by creation date and id descending.
     """
     try:
-        query = select(Summary).order_by(Summary.created_at.desc()).limit(limit)
+        query = select(Summary).order_by(Summary.created_at.desc(), Summary.id.desc()).limit(limit)
         results = db.scalars(query).all()
         return list(results)
     except SQLAlchemyError as exc:
