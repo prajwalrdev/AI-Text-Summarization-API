@@ -3,6 +3,7 @@ Service layer for integrating Google Gemini API using the official google-genai 
 """
 
 import os
+from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
 from fastapi import HTTPException, status
@@ -11,8 +12,9 @@ from google.genai import types
 from google.genai.errors import APIError, ClientError, ServerError
 import httpx
 
-# Load environment variables from .env file
-load_dotenv()
+# Always load .env from the project root directory regardless of current working directory
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 # Default configuration constants
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"

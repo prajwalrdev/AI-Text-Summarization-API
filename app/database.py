@@ -3,13 +3,15 @@ Database configuration and session management using SQLAlchemy ORM.
 """
 
 import os
+from pathlib import Path
 from typing import Generator
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
 
-# Load environment variables
-load_dotenv()
+# Always load .env from the project root directory regardless of current working directory
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 # Read DATABASE_URL from .env with fallback to default PostgreSQL connection
 DEFAULT_DATABASE_URL = "postgresql+psycopg://postgres:postgres@localhost:5432/summarizer_db"

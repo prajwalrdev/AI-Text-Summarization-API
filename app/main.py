@@ -2,9 +2,11 @@
 Main FastAPI Application Entry Point.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 from typing import List
 from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -25,9 +27,10 @@ async def lifespan(app: FastAPI):
     """
     Application lifespan manager.
     Initializes database tables on application startup.
+    Runs create_all in a worker thread so a slow/unreachable DB cannot block the event loop.
     """
     try:
-        Base.metadata.create_all(bind=engine)
+        await asyncio.to_thread(Base.metadata.create_all, bind=engine)
     except Exception as exc:
         print(f"Notice: Database table initialization deferred or failed: {exc}")
     yield
@@ -41,6 +44,14 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan,
 )
+
+
+@app.get("/", include_in_schema=False)
+def root() -> RedirectResponse:
+    """
+    Root URL has no API page. Redirect browsers to the interactive Swagger docs.
+    """
+    return RedirectResponse(url="/docs")
 
 
 @app.get(

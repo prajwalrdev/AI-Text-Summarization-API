@@ -19,7 +19,7 @@ This project strictly adheres to clean architecture principles:
 ## 2. Key Features
 
 - **Pydantic Data Validation**: Enforces string boundaries, non-empty content, and custom whitespace validators, rejecting malformed requests with standard `422 Unprocessable Entity` responses.
-- **Google Gemini 2.5 Flash Integration**: Leverages Google's official `google-genai` Python SDK with executive system instructions, deterministic temperature (`0.2`), and token caps.
+- **Google Gemini Flash Integration**: Leverages Google's official `google-genai` Python SDK with executive system instructions, deterministic temperature (`0.2`), and token caps.
 - **Robust Timeout & Error Handling**: Transparently maps third-party failures to standard HTTP codes (`504 Gateway Timeout`, `429 Too Many Requests`, `502 Bad Gateway`).
 - **PostgreSQL Persistence with SQLAlchemy 2.0**: Records every summarization with automatic primary keys and UTC timestamps.
 - **Automatic Connection Recovery**: Utilizes SQLAlchemy's `pool_pre_ping=True` to detect and recover from stale database connections.
@@ -66,7 +66,7 @@ sequenceDiagram
         Pydantic-->>Client: 422 Unprocessable Entity
     else Input Valid
         FastAPI->>Gemini: summarize_text(text)
-        Gemini->>GoogleCloud: HTTPS POST (gemini-2.5-flash, temp=0.2)
+        Gemini->>GoogleCloud: HTTPS POST (gemini-3.8-flash, temp=0.2)
         alt Cloud Timeout / Rate Limit
             GoogleCloud-->>FastAPI: Error (Timeout / 429)
             FastAPI-->>Client: 504 Gateway Timeout or 429 Rate Limit

@@ -11,6 +11,10 @@ __pycache__/
 # Environment variables & secrets (Never commit secrets to version control)
 .env
 
+# Local SQLite database file
+*.db
+local_dev.db
+
 # Testing & Coverage
 .pytest_cache/
 .coverage
