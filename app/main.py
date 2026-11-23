@@ -4,7 +4,8 @@ Main FastAPI Application Entry Point.
 
 from contextlib import asynccontextmanager
 from typing import List
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Response, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -41,6 +42,23 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan,
 )
+
+
+@app.get("/", include_in_schema=False)
+def root():
+    """
+    Redirect root URL directly to Swagger UI documentation (/docs).
+    Prevents 404 Not Found when opening http://127.0.0.1:8000 in a browser.
+    """
+    return RedirectResponse(url="/docs")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    """
+    Handle browser favicon request cleanly without logging 404 errors.
+    """
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get(
