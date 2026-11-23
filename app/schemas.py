@@ -17,10 +17,7 @@ class SummarizeRequest(BaseModel):
         min_length=1,
         max_length=50000,
         description="The source text to be summarized. Cannot be empty or whitespace.",
-        examples=[
-            "Artificial intelligence is transforming the world by automating complex workflows, "
-            "optimizing processes, and generating valuable insights from vast amounts of data."
-        ],
+        examples=["Type your text here..."],
     )
 
     @field_validator("text")
@@ -44,9 +41,7 @@ class SummarizeResponse(BaseModel):
     summary: str = Field(
         ...,
         description="The AI-generated concise summary of the input text.",
-        examples=[
-            "Artificial intelligence is revolutionizing industries by streamlining workflows and extracting valuable insights."
-        ],
+        examples=["The AI-generated summary will appear here."],
     )
 
 
