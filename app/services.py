@@ -4,7 +4,7 @@ Service layer for integrating Google Gemini API using the official google-genai 
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 from dotenv import load_dotenv
 from fastapi import HTTPException, status
 from google import genai
@@ -16,8 +16,13 @@ import httpx
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-# Default configuration constants
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+# Default model configuration with automatic fallback chain
+DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
+FALLBACK_MODELS: List[str] = [
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash-lite",
+    "gemini-3.8-flash",
+]
 REQUEST_TIMEOUT_SECONDS = 30.0
 
 SUMMARIZATION_SYSTEM_INSTRUCTION = (
@@ -45,10 +50,12 @@ def get_gemini_client() -> genai.Client:
             ),
         )
 
-    # Initialize client with configured timeout
+    # Use standard httpx.Client to guarantee fast, reliable TLS/SSL connections on Windows
+    std_httpx_client = httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS)
+
     return genai.Client(
         api_key=api_key.strip(),
-        http_options=types.HttpOptions(timeout=REQUEST_TIMEOUT_SECONDS),
+        http_options=types.HttpOptions(httpx_client=std_httpx_client),
     )
 
 
@@ -63,7 +70,7 @@ def summarize_text(
     Args:
         text: The validated input text to summarize.
         client: Optional pre-configured GenAI client (enables mocking in automated tests).
-        model: Optional model name override (defaults to GEMINI_MODEL env var or gemini-2.5-flash).
+        model: Optional model name override.
 
     Returns:
         str: The AI-generated summary text.
@@ -74,7 +81,9 @@ def summarize_text(
     if client is None:
         client = get_gemini_client()
 
-    selected_model = model or os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+    models_to_try = [model] if model else [os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)] + [
+        m for m in FALLBACK_MODELS if m != os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+    ]
 
     prompt = (
         f"Please summarize the following text concisely while preserving all critical information:\n\n{text}"
@@ -86,60 +95,64 @@ def summarize_text(
         max_output_tokens=1024,
     )
 
-    try:
-        response = client.models.generate_content(
-            model=selected_model,
-            contents=prompt,
-            config=config,
-        )
-
-        if not response or not response.text:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Gemini API returned an empty or invalid response.",
+    last_exception = None
+    for target_model in models_to_try:
+        try:
+            response = client.models.generate_content(
+                model=target_model,
+                contents=prompt,
+                config=config,
             )
 
-        return response.text.strip()
+            if response and response.text:
+                return response.text.strip()
 
-    except (TimeoutError, httpx.TimeoutException) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail=f"The request to Google Gemini API timed out after {REQUEST_TIMEOUT_SECONDS} seconds.",
-        ) from exc
-
-    except ClientError as exc:
-        # Client-side API errors (e.g., 400 Bad Request, 401/403 Invalid API Key, 429 Rate Limit)
-        status_code = getattr(exc, "code", 400)
-        if status_code == 429:
+        except (TimeoutError, httpx.TimeoutException) as exc:
             raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Gemini API quota or rate limit exceeded. Please try again later.",
-            ) from exc
-        if status_code in (401, 403):
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Gemini API authentication failed. Verify your GEMINI_API_KEY.",
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail=f"The request to Google Gemini API timed out after {REQUEST_TIMEOUT_SECONDS} seconds.",
             ) from exc
 
+        except ClientError as exc:
+            status_code = getattr(exc, "code", 400)
+            if status_code == 429:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Gemini API quota or rate limit exceeded. Please try again later.",
+                ) from exc
+            if status_code in (401, 403):
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Gemini API authentication failed. Verify your GEMINI_API_KEY.",
+                ) from exc
+            # If 404 model not found, try next fallback
+            last_exception = exc
+            continue
+
+        except (ServerError, APIError) as exc:
+            # If 503 high demand spike, try next fallback
+            last_exception = exc
+            continue
+
+        except HTTPException:
+            raise
+
+        except Exception as exc:
+            if "timeout" in type(exc).__name__.lower() or "timeout" in str(exc).lower():
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail=f"The request to Google Gemini API timed out: {str(exc)}",
+                ) from exc
+            last_exception = exc
+            continue
+
+    if isinstance(last_exception, (ServerError, APIError)):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Gemini API client error: {exc.message if hasattr(exc, 'message') else str(exc)}",
-        ) from exc
+            detail=f"Google Gemini upstream service error: {getattr(last_exception, 'message', str(last_exception))}",
+        ) from last_exception
 
-    except (ServerError, APIError) as exc:
-        # Upstream Google server errors (5xx)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Google Gemini upstream service error: {exc.message if hasattr(exc, 'message') else str(exc)}",
-        ) from exc
-
-    except HTTPException:
-        # Re-raise already formed HTTPExceptions
-        raise
-
-    except Exception as exc:
-        # Generic fallback
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An unexpected error occurred while communicating with Gemini API: {str(exc)}",
-        ) from exc
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail=f"Failed to generate summary with Gemini API: {str(last_exception)}",
+    ) from last_exception
