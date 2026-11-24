@@ -1,47 +1,54 @@
-# AI Text Summarizer REST API
+# AI Text Summarization REST API (C Language)
 
-A high-performance, production-ready AI Text Summarization REST API built with **FastAPI**, **Google Gemini API** (via the official `google-genai` SDK), and **PostgreSQL** with **SQLAlchemy ORM**.
+A high-performance, low-level **C Language REST API** for AI text summarization powered by **Google's hosted Gemini API** and **PostgreSQL**.
+
+Built with native Windows Sockets (`Winsock2`) and native Windows HTTPS (`WinHTTP`), this service has **zero Python runtime dependencies** and compiles directly into native machine code.
 
 ---
 
 ## 1. Project Overview
 
-The **AI Text Summarizer API** is an enterprise-grade backend service designed to accept long-form text, validate its structure, generate a concise, objective summary using Google's hosted Gemini generative foundation models, and persist both the original text and generated summary with timestamps in a PostgreSQL relational database.
+The **AI Text Summarizer C API** is a lightweight, low-latency microservice written entirely in C. It listens on HTTP port `8000`, receives text payloads in JSON, validates input strings, dispatches HTTPS requests to Google's hosted Gemini foundation models (`gemini-3.1-flash-lite`), persists records in a PostgreSQL database table (`summaries`), and returns concise summaries formatted as JSON.
 
 ### Core Architectural Principles
-- **Separation of Concerns**: Schema validation, database models, AI external services, and routing are strictly decoupled into independent modules.
-- **Zero Local AI Footprint**: Consumes Google's hosted cloud AI infrastructure; no local LLMs are downloaded or run locally.
-- **Defensive Error Handling**: Exhaustive exception mapping for timeouts, quota limits, missing credentials, and database failures.
-- **100% Hermetic Automated Testing**: Comprehensive Pytest suite guaranteeing deterministic verification without incurring cloud costs.
+- **100% Pure C (No Python)**: Eliminates Python interpreter overhead, running directly as native machine code.
+- **Hosted Cloud AI (Zero Local Model Overhead)**: Communicates securely with Google Cloud's hosted Gemini infrastructure using the native Windows **WinHTTP API** over TLS/HTTPS.
+- **Low-Level Socket Networking**: Employs Windows Sockets (`Winsock2` / `ws2_32.lib`) to manage raw TCP connections, HTTP/1.1 protocol parsing, and response serialization.
+- **PostgreSQL Persistence**: Interacts with PostgreSQL using parameterized queries (`PQexecParams`) to prevent SQL injection vulnerabilities.
+- **Manual Memory Safety**: Uses explicit dynamic allocation (`malloc` / `free`) with strict boundary checks to prevent memory leaks and buffer overflows.
 
 ---
 
-## 2. Key Features
+## 2. Technology Stack
 
-- **Pydantic v2 Data Validation**: Enforces string boundaries, non-empty content, and custom whitespace validators, rejecting malformed requests with standard `422 Unprocessable Entity` responses.
-- **Google Gemini Hosted AI Integration**: Leverages Google's official `google-genai` Python SDK with executive system instructions, deterministic temperature (`0.2`), and dynamic model fallback (`gemini-3.1-flash-lite`).
-- **Robust Timeout & Error Handling**: Transparently maps third-party failures to standard HTTP codes (`504 Gateway Timeout`, `429 Too Many Requests`, `502 Bad Gateway`).
-- **PostgreSQL Persistence with SQLAlchemy 2.0**: Records every summarization with automatic primary keys and UTC timestamps.
-- **Automatic Connection Recovery**: Utilizes SQLAlchemy's `pool_pre_ping=True` to detect and recover from stale database connections.
-- **Dual Client Interfaces**: Interactive Swagger UI (`/docs`) and a standalone interactive terminal client (`client.py`).
-- **CLI Database Verification**: `verify_db.py` script allows rapid database inspection directly from the terminal.
+| Layer | Technology | Purpose |
+| :--- | :--- | :--- |
+| **Language** | ANSI C (C99 / C11) | Low-level systems programming language |
+| **Networking** | Windows Sockets (`Winsock2` / `ws2_32.lib`) | Raw TCP socket listener & HTTP/1.1 server |
+| **HTTPS / TLS** | Windows WinHTTP (`winhttp.lib`) | Secure HTTPS client calling Google Gemini Cloud |
+| **Cloud AI** | Google Gemini Generative Language API | Hosted foundation models (`gemini-3.1-flash-lite`) |
+| **Database** | PostgreSQL (`libpq` / `libpq-fe.h`) | Relational persistence store |
+| **Build Tools** | GCC (MinGW-w64) / MSVC (`cl.exe`) | C compiler for Windows 11 |
 
 ---
 
-## 3. Technology Stack
+## 3. Project Structure
 
-| Layer | Technology | Version | Purpose |
-| :--- | :--- | :--- | :--- |
-| **Language** | Python | 3.10+ / 3.14 | Modern backend language with native type hinting |
-| **Framework** | FastAPI | 0.115+ | High-throughput, async web framework |
-| **ASGI Server** | Uvicorn | 0.30+ | Lightning-fast ASGI HTTP server |
-| **Validation** | Pydantic v2 | 2.8+ | Runtime schema validation and serialization |
-| **Cloud AI** | Google GenAI SDK | 0.1.1+ | Official SDK for Google Gemini hosted models |
-| **Database** | PostgreSQL | 14+ | Relational persistence store |
-| **ORM** | SQLAlchemy | 2.0+ | Modern mapped-column Object-Relational Mapper |
-| **DB Driver** | Psycopg 3 | 3.2+ | Modern PostgreSQL adapter for Python |
-| **Configuration**| python-dotenv | 1.0+ | Secure `.env` environment variable management |
-| **Testing** | Pytest & HTTPX | 8.0+ / 0.27+ | Test runner, fixtures, and FastAPI TestClient |
+```text
+ai-text-summarizer/
+│
+├── server.c      # Main HTTP server, socket listener (port 8000), routing, JSON validation
+├── gemini.h      # Header definition for Google Gemini HTTPS client
+├── gemini.c      # Native WinHTTP client calling Google Generative Language API over TLS
+├── db.h          # Header definition for PostgreSQL database operations
+├── db.c          # PostgreSQL client integration using libpq
+├── build.bat     # Automated Windows batch compiler script (GCC / MSVC)
+├── Makefile      # Standard GNU Makefile for GCC / MinGW
+├── .env          # API keys & database credentials (git ignored)
+├── .env.example  # Environment variable template
+├── .gitignore    # Excludes binaries (*.exe, *.obj) and secrets
+└── README.md     # Complete project documentation
+```
 
 ---
 
@@ -51,330 +58,156 @@ The **AI Text Summarizer API** is an enterprise-grade backend service designed t
 sequenceDiagram
     autonumber
     actor Client
-    participant ASGI as Uvicorn (ASGI)
-    participant FastAPI as FastAPI Router
-    participant Pydantic as Pydantic Validation
-    participant Gemini as Google GenAI SDK
-    participant GoogleCloud as Google Gemini Cloud
-    participant ORM as SQLAlchemy ORM
-    participant Postgres as PostgreSQL DB
+    participant Server as Winsock TCP Server (server.c)
+    participant Validator as Input Validator (server.c)
+    participant Gemini as WinHTTP Client (gemini.c)
+    participant Google as Google Gemini Cloud
+    participant DB as PostgreSQL (db.c)
 
-    Client->>ASGI: POST /summarize { "text": "..." }
-    ASGI->>FastAPI: Forward Request
-    FastAPI->>Pydantic: Parse & Validate JSON (SummarizeRequest)
-    alt Input Invalid (Empty / Whitespace / Malformed)
-        Pydantic-->>Client: 422 Unprocessable Entity
-    else Input Valid
-        FastAPI->>Gemini: summarize_text(text)
-        Gemini->>GoogleCloud: HTTPS POST (gemini-3.1-flash-lite, temp=0.2)
-        alt Cloud Timeout / Rate Limit
-            GoogleCloud-->>FastAPI: Error (Timeout / 429)
-            FastAPI-->>Client: 504 Gateway Timeout or 429 Rate Limit
-        else Cloud Success
-            GoogleCloud-->>Gemini: Summary Response
-            Gemini-->>FastAPI: "Summary string..."
-            FastAPI->>ORM: Session.add(Summary(...))
-            FastAPI->>ORM: Session.commit()
-            ORM->>Postgres: INSERT INTO summaries (...)
-            Postgres-->>ORM: Commit OK
-            FastAPI-->>Client: 200 OK { "summary": "..." }
-        end
+    Client->>Server: HTTP POST /summarize { "text": "..." }
+    Server->>Validator: Parse & Validate JSON
+    alt Text is Missing, Empty or Whitespace
+        Validator-->>Client: HTTP 422 Unprocessable Entity
+    else Text is Valid
+        Server->>Gemini: gemini_summarize(api_key, text)
+        Gemini->>Google: HTTPS POST (WinHTTP TLS to generativelanguage.googleapis.com)
+        Google-->>Gemini: Return AI Summary
+        Gemini-->>Server: Summary Text
+        Server->>DB: INSERT INTO summaries (original_text, generated_summary)
+        DB-->>Server: Row Written OK
+        Server-->>Client: HTTP 200 OK { "summary": "..." }
     end
 ```
 
 ---
 
-## 5. Detailed Code Walkthrough by Assignment Topic
+## 5. API Endpoints
 
-### Topic 1: FastAPI Service & the `POST /summarize` Endpoint (`app/main.py`)
+### 1. Health Check Endpoint
+- **Method**: `GET /health`
+- **Response** (`200 OK`):
+  ```json
+  {
+    "status": "healthy",
+    "version": "1.0.0",
+    "language": "C"
+  }
+  ```
 
-The main entry point exposes the REST endpoints and coordinates validation, AI summarization, and database persistence:
+### 2. Main Summarization Endpoint
+- **Method**: `POST /summarize`
+- **Headers**: `Content-Type: application/json`
+- **Request Body**:
+  ```json
+  {
+    "text": "Artificial intelligence is transforming industries worldwide by automating repetitive tasks, uncovering deep data insights, and enabling new creative workflows."
+  }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  {
+    "summary": "Artificial intelligence automates tasks, uncovers data insights, and streamlines creative workflows across global industries."
+  }
+  ```
 
-```python
-@app.post(
-    "/summarize",
-    response_model=SummarizeResponse,
-    status_code=status.HTTP_200_OK,
-    tags=["Summarization"],
-    summary="Generate and save text summary",
-)
-def summarize(
-    request: SummarizeRequest,
-    db: Session = Depends(get_db),
-) -> SummarizeResponse:
-    # 1. Call Gemini AI service
-    summary = summarize_text(request.text)
-
-    # 2. Persist record into the PostgreSQL database
-    try:
-        record = Summary(
-            original_text=request.text,
-            generated_summary=summary,
-        )
-        db.add(record)
-        db.commit()
-        db.refresh(record)
-    except SQLAlchemyError as exc:
-        db.rollback()  # Rollback on database failure
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error occurred while persisting summary: {str(exc)}",
-        ) from exc
-
-    return SummarizeResponse(summary=summary)
-```
-
-#### Code Explanation:
-1. **`request: SummarizeRequest`**: FastAPI inspects the parameter type annotation. Because `SummarizeRequest` inherits from `pydantic.BaseModel`, FastAPI automatically extracts and validates the JSON body from the HTTP request.
-2. **`db: Session = Depends(get_db)`**: Uses FastAPI's **Dependency Injection** system. It requests a thread-safe database session from `get_db()`, ensuring the session is opened before the handler runs and closed when the response completes.
-3. **`response_model=SummarizeResponse`**: Sanitizes the outgoing data, guaranteeing the client receives strictly `{"summary": "..."}` and stripping any accidental internal data leaks.
-4. **`db.rollback()`**: If an error occurs during `db.commit()` (e.g. disk failure or lost connection), `db.rollback()` cancels the pending transaction so the database socket remains healthy.
+### 3. Input Validation Rejection
+If the client sends an empty string or whitespace-only text (`"   "`):
+- **Response** (`422 Unprocessable Entity`):
+  ```json
+  {
+    "detail": "The 'text' field cannot be empty or contain only whitespace."
+  }
+  ```
 
 ---
 
-### Topic 2: Hosted AI API Integration with Google Gemini (`app/services.py`)
+## 6. How to Compile and Run on Windows 11
 
-Interacts with Google's hosted foundation models over HTTPS. **No model is run or downloaded locally**:
-
-```python
-def get_gemini_client() -> genai.Client:
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key or api_key.strip() in ("", "your_gemini_api_key_here"):
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="GEMINI_API_KEY is not configured. Please set a valid Gemini API key in your .env file.",
-        )
-
-    # Use standard httpx.Client to guarantee fast, reliable TLS/SSL connections on Windows
-    std_httpx_client = httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS)
-
-    return genai.Client(
-        api_key=api_key.strip(),
-        http_options=types.HttpOptions(httpx_client=std_httpx_client),
-    )
+### Step 1: Configure Environment Variables
+Create your `.env` file from the template:
+```cmd
+copy .env.example .env
 ```
 
-```python
-def summarize_text(text: str, client: Optional[genai.Client] = None) -> str:
-    if client is None:
-        client = get_gemini_client()
-
-    config = types.GenerateContentConfig(
-        system_instruction=(
-            "You are an expert executive summarizer. Analyze the input text carefully and produce a concise, "
-            "accurate, and coherent summary capturing the core ideas, primary insights, and essential takeaways. "
-            "Return strictly the summary text."
-        ),
-        temperature=0.2,       # Low temperature for factual, deterministic summaries
-        max_output_tokens=1024,# Prevent runaway generation costs
-    )
-
-    # Dynamic fallback across production Gemini models
-    for target_model in ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3.8-flash"]:
-        try:
-            response = client.models.generate_content(
-                model=target_model,
-                contents=f"Please summarize the following text concisely:\n\n{text}",
-                config=config,
-            )
-            if response and response.text:
-                return response.text.strip()
-        except ClientError as exc:
-            if getattr(exc, "code", 400) == 429:
-                raise HTTPException(status_code=429, detail="Gemini API quota exceeded.") from exc
-            continue
-```
-
-#### Code Explanation:
-1. **`from google import genai`**: Uses the official, unified Google GenAI SDK.
-2. **`system_instruction`**: Sets the persona of the AI, eliminating conversational filler (such as *"Sure! Here is your summary:"*).
-3. **`temperature=0.2`**: Low temperature restricts creativity and hallucination, enforcing high factual accuracy.
-4. **Defensive Error Mapping**: Maps Google Cloud errors to REST status codes:
-   - Timeout (>30s) ➔ `504 Gateway Timeout`
-   - Quota limit ➔ `429 Too Many Requests`
-   - Invalid Key ➔ `502 Bad Gateway`
-   - Google Outage ➔ `502 Bad Gateway`
-
----
-
-### Topic 3: Pydantic Request & Response Validation (`app/schemas.py`)
-
-Enforces strict contracts on all incoming and outgoing data:
-
-```python
-class SummarizeRequest(BaseModel):
-    text: str = Field(
-        ...,
-        min_length=1,
-        max_length=50000,
-        description="The source text to be summarized. Cannot be empty or whitespace.",
-        examples=["Type your text here..."],
-    )
-
-    @field_validator("text")
-    @classmethod
-    def validate_text_not_blank(cls, value: str) -> str:
-        stripped_value = value.strip()
-        if not stripped_value:
-            raise ValueError("The 'text' field cannot be empty or contain only whitespace.")
-        return stripped_value
-
-
-class SummarizeResponse(BaseModel):
-    summary: str = Field(
-        ...,
-        description="The AI-generated concise summary of the input text.",
-    )
-```
-
-#### Code Explanation:
-1. **`Field(..., min_length=1, max_length=50000)`**: The `...` (Ellipsis) specifies that `text` is strictly required. String length boundaries prevent zero-length or excessively huge payloads.
-2. **`@field_validator("text")`**: Intercepts the raw string before model instantiation. If a client sends `"   "` (spaces or tabs), the validator raises a `ValueError`, which FastAPI converts into an **RFC-compliant HTTP `422 Unprocessable Entity`** error response.
-
----
-
-### Topic 4: PostgreSQL Persistence with SQLAlchemy ORM (`app/database.py` & `app/models.py`)
-
-Handles relational database connections, pooling, and table mapping:
-
-```python
-# app/database.py
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,  # Proactively pings connection to detect dropped sockets
-)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-def get_db() -> Generator[Session, None, None]:
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()  # Guarantees connection is returned to pool after request
-```
-
-```python
-# app/models.py
-class Summary(Base):
-    __tablename__ = "summaries"
-
-    id: Mapped[int] = mapped_column(primary_key=True, index=True, autoincrement=True)
-    original_text: Mapped[str] = mapped_column(Text, nullable=False)
-    generated_summary: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-```
-
-#### Code Explanation:
-1. **`pool_pre_ping=True`**: Issues a lightweight `SELECT 1` ping before handing a pooled connection to a route. If PostgreSQL or a proxy closed the socket due to idle timeout, SQLAlchemy seamlessly reconnects.
-2. **`yield db` / `finally: db.close()`**: The generator ensures the session is closed and returned to the pool even if an unhandled exception occurs inside the route.
-3. **`server_default=func.now()`**: PostgreSQL itself assigns the UTC timestamp upon insertion, ensuring timestamp accuracy regardless of server clock discrepancies.
-
----
-
-### Topic 5: Incremental Git Workflow
-
-Development was performed through **incremental semantic commits** rather than a single large upload:
-
-```text
-0302517 feat: add interactive terminal client and clean placeholder examples
-0054c5b fix: redirect root to docs and handle favicon
-f4ee949 refactor: remove custom UI and unused code
-66eabe4 feat: add interactive web UI and optimize Gemini client
-5fe2073 fix: enhance env path resolution and add run.py launcher
-c39cfcf docs: add project README
-ab8202b test: add API tests and error handling
-460069d feat: add PostgreSQL persistence
-8033847 feat: integrate Gemini summarization API
-d4e23eb feat: add Pydantic request and response schemas
-ed96979 feat: add FastAPI application
-55b3b27 chore: initialize project structure
-```
-
----
-
-## 6. How to Run the Project (Windows 11 PowerShell)
-
-### Step 1: Open Terminal in Project Directory
-```powershell
-cd "C:\Users\prajw\.gemini\antigravity\scratch\ai-text-summarizer"
-```
-
-### Step 2: Configure Environment Variables
-Copy the template and edit your `.env`:
-```powershell
-Copy-Item .env.example .env
-notepad .env
-```
-Fill in your credentials:
+Open `.env` and configure your keys:
 ```ini
-GEMINI_API_KEY=AIzaSy...your_gemini_key...
-DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/summarizer_db
+# Google Gemini API Key from https://aistudio.google.com/
+GEMINI_API_KEY=AIzaSy...your_actual_key...
+
+# PostgreSQL Connection String
+DATABASE_URL=host=localhost port=5432 dbname=summarizer_db user=postgres password=postgres
+```
+
+### Step 2: Compile the Code
+Run the included build script:
+```cmd
+build.bat
+```
+
+*(Or compile directly with GCC via MinGW)*:
+```cmd
+gcc -O2 -Wall server.c gemini.c db.c -o server.exe -lws2_32 -lwinhttp
+```
+
+*(Or compile with Microsoft Visual C++ `cl.exe`)*:
+```cmd
+cl /O2 /Fe:server.exe server.c gemini.c db.c ws2_32.lib winhttp.lib
 ```
 
 ### Step 3: Start the Server
-```powershell
-python run.py
+```cmd
+server.exe
 ```
-- Server URL: **http://127.0.0.1:8000**
-- Swagger UI Documentation: **http://127.0.0.1:8000/docs**
 
-### Step 4: Use the Interactive Terminal Client (Easiest Way to Test)
-Open PowerShell and run:
-```powershell
-python client.py
-```
-Type any custom text at the prompt and press Enter to see your AI summary immediately!
+Output:
+```text
+==============================================================
+    AI TEXT SUMMARIZATION REST API - C LANGUAGE BACKEND
+==============================================================
+GEMINI_API_KEY: LOADED
+DATABASE_URL:   DEFAULT
+Listening on:   http://127.0.0.1:8000
+==============================================================
 
-### Step 5: Verify Stored Database Records
-```powershell
-python verify_db.py
+Server successfully started! Waiting for HTTP requests...
 ```
 
 ---
 
-## 7. Automated Testing with Pytest
+## 7. How to Test the API
 
-Run the comprehensive test suite:
+Open a PowerShell terminal and test using `Invoke-RestMethod` or `curl`:
+
 ```powershell
-python -m pytest -v tests/test_api.py
+# 1. Health check
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/health" -Method Get
+
+# 2. Valid summarization request
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/summarize" -Method Post -ContentType "application/json" -Body '{"text": "SpaceX designs, manufactures and launches advanced rockets to revolutionize space travel."}'
+
+# 3. Test validation rejection (Empty text)
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/summarize" -Method Post -ContentType "application/json" -Body '{"text": "   "}'
 ```
 
-### Test Scenarios Covered (All 12 Passed in ~2s)
-| Test | Condition Tested | Expected Status |
-| :--- | :--- | :--- |
-| `test_health_check` | Service liveness probe | `200 OK` |
-| `test_summarize_valid_input_success` | Valid text payload | `200 OK` + DB Insert |
-| `test_get_summaries_endpoint` | Query database records | `200 OK` |
-| `test_summarize_empty_input` | Empty string (`""`) | `422 Unprocessable Entity` |
-| `test_summarize_whitespace_only_input`| Whitespace only (`"   "`) | `422 Unprocessable Entity` |
-| `test_summarize_missing_text_field` | Missing `"text"` field | `422 Unprocessable Entity` |
-| `test_summarize_invalid_json_payload` | Malformed JSON syntax | `422 Unprocessable Entity` |
-| `test_summarize_gemini_missing_api_key`| Missing `.env` API key | `500 Internal Server Error` |
-| `test_summarize_gemini_timeout` | Google API timeout (>30s)| `504 Gateway Timeout` |
-| `test_summarize_gemini_rate_limit` | Quota exhausted (429) | `429 Too Many Requests` |
-| `test_summarize_gemini_upstream_server_error` | Google 5xx server error | `502 Bad Gateway` |
-| `test_summarize_database_failure_rollback`| DB write failure | `500` + Clean Rollback |
+---
+
+## 8. Database Table Schema (PostgreSQL)
+
+The table is defined as:
+```sql
+CREATE TABLE IF NOT EXISTS summaries (
+    id SERIAL PRIMARY KEY,
+    original_text TEXT NOT NULL,
+    generated_summary TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
 
 ---
 
-## 8. What Was Learned
+## 9. What Was Learned
 
-1. **Decoupled 3-Tier Architecture**: Keeping Pydantic validation, Gemini cloud logic, and SQLAlchemy persistence in separate modules allows individual components to be modified or tested without affecting the rest of the application.
-2. **Modern Google GenAI SDK (`google-genai`)**: Using the unified official SDK, handling model lifecycle, dynamic fallback across available models, and configuring `httpx.Client` for fast TLS connections on Windows.
-3. **Defensive Error Translation**: External APIs fail unpredictably. Transparently translating external timeouts and rate limits into RFC-compliant HTTP status codes (`504`, `429`, `502`) is critical for production reliability.
-4. **Relational Persistence & Pool Management**: Using SQLAlchemy 2.0 with Psycopg 3, configuring connection pre-pinging (`pool_pre_ping=True`) to avoid stale connection errors, and using transactional rollbacks (`db.rollback()`) to protect data integrity.
-5. **Zero-Cost Hermetic Testing**: Testing external cloud AI APIs without spending money by mocking SDK calls with `unittest.mock.patch` and overriding database sessions with an in-memory SQLite database (`StaticPool`).
-6. **Git Hygiene**: Practicing disciplined, incremental commits matching feature development stages (`chore:`, `feat:`, `test:`, `docs:`, `fix:`, `refactor:`).
-
----
-
-## 9. Future Improvements
-
-1. **Redis Caching**: Cache summaries using a SHA-256 hash of the input text as the cache key to avoid duplicate LLM calls and reduce API costs.
-2. **Asynchronous Background Processing**: For very long documents (e.g. 50+ pages), offload processing to Celery or Redis queues with a task status endpoint (`GET /tasks/{task_id}`).
-3. **Streaming Responses (SSE)**: Implement a Server-Sent Events endpoint (`POST /summarize/stream`) to stream summary tokens back in real-time as Gemini generates them.
-4. **User Authentication & Quotas**: Add JWT authentication (OAuth2) and per-user daily rate limits using Redis token buckets.
+- **Raw Socket Web Architecture**: Implementing HTTP/1.1 from scratch using Windows Sockets (`Winsock2`), managing TCP handshakes, and parsing HTTP request headers.
+- **Native HTTPS in C without External Libs**: Utilizing Windows **WinHTTP** to securely establish TLS/HTTPS handshakes with Google's REST endpoints, send authentication headers, and stream response bodies.
+- **Memory Safety & String Manipulation in C**: Explicitly allocating buffers, escaping JSON characters to avoid injection errors, and handling pointer math without memory corruption.
+- **Relational Integration with libpq**: Using PostgreSQL's native C client library with parameterized SQL statements (`PQexecParams`) for secure data persistence.

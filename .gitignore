@@ -1,25 +1,15 @@
-# Virtual Environment
-venv/
-.venv/
-env/
-**/venv/
-
-# Python bytecode and cache files
-__pycache__/
-*.py[cod]
-*$py.class
+# Compiled binaries and object files
+*.exe
+*.o
+*.obj
+*.dll
+*.so
+*.dylib
+*.pdb
+*.ilk
 
 # Environment variables & secrets (Never commit secrets to version control)
 .env
-
-# Local SQLite database file
-*.db
-local_dev.db
-
-# Testing & Coverage
-.pytest_cache/
-.coverage
-htmlcov/
 
 # Editor and IDE configurations
 .vscode/
@@ -27,6 +17,6 @@ htmlcov/
 *.swp
 *.swo
 
-# Operating System files
+# OS files
 .DS_Store
 Thumbs.db
